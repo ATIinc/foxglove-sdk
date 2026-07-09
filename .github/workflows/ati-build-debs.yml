@@ -1,0 +1,89 @@
+# ATI fork-only workflow: build ros-kilted-foxglove-bridge .deb packages for
+# amd64 and arm64 and (optionally) attach them to a GitHub release on this
+# fork. Used to ship the SW-3879 service-introspection fix to firefly images
+# until upstream ships a release containing it.
+name: ATI build bridge debs
+
+on:
+  push:
+    tags: ["ati-bridge-v*"]
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: >-
+          Optional tag name for a GitHub release to create/update with the
+          built debs (e.g. ati-bridge-v3.4.2-sw3879). Leave empty to only
+          upload workflow artifacts.
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: "deb (kilted, ${{ matrix.arch }})"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build deb in ROS kilted container
+        run: make -C ros docker-deb-bridge-kilted
+
+      - name: Rename deb with architecture suffix
+        run: |
+          set -euo pipefail
+          ls -l ros/dist/
+          for deb in ros/dist/*.deb; do
+            base=$(basename "$deb" .deb)
+            mv "$deb" "ros/dist/${base}_${{ matrix.arch }}.deb"
+          done
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ros-kilted-foxglove-bridge-${{ matrix.arch }}
+          path: ros/dist/*.deb
+          if-no-files-found: error
+
+  release:
+    name: Create release
+    if: ${{ startsWith(github.ref, 'refs/tags/ati-bridge-v') || inputs.release_tag != '' }}
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: debs
+          merge-multiple: true
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" == refs/tags/ati-bridge-v* ]]; then
+            RELEASE_TAG="${GITHUB_REF#refs/tags/}"
+          else
+            RELEASE_TAG="${{ inputs.release_tag }}"
+          fi
+          ls -l debs/
+          if ! gh release view "${RELEASE_TAG}" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+            gh release create "${RELEASE_TAG}" \
+              --repo "${{ github.repository }}" \
+              --target "${{ github.sha }}" \
+              --title "${RELEASE_TAG}" \
+              --notes "ros-kilted-foxglove-bridge debs (amd64/arm64) with the SW-3879 service introspection fix. Built from ${{ github.sha }}."
+          fi
+          gh release upload "${RELEASE_TAG}" debs/*.deb \
+            --repo "${{ github.repository }}" --clobber
