@@ -39,14 +39,14 @@ jobs:
       - name: Build deb in ROS kilted container
         run: make -C ros docker-deb-bridge-kilted
 
-      - name: Rename deb with architecture suffix
+      - name: Verify deb architecture
         run: |
           set -euo pipefail
           ls -l ros/dist/
-          for deb in ros/dist/*.deb; do
-            base=$(basename "$deb" .deb)
-            mv "$deb" "ros/dist/${base}_${{ matrix.arch }}.deb"
-          done
+          # dpkg-buildpackage already embeds the architecture in the filename
+          # (e.g. ros-kilted-foxglove-bridge_3.4.2-0noble_amd64.deb); just
+          # assert we built for the arch this job targets.
+          ls ros/dist/*_${{ matrix.arch }}.deb
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
