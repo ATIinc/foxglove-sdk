@@ -39,8 +39,13 @@ jobs:
       - name: Build deb in ROS kilted container
         # The Makefile mounts $(PWD)/.. into the container, and $(PWD) comes from
         # the shell environment (make -C would not update it), so run from ros/.
+        #
+        # REMOTE_ACCESS is disabled because the bridge on main requires a newer C++
+        # SDK than the released zip that FetchContent downloads (upstream CI builds
+        # the SDK from the repo instead). Firefly does not use the remote access
+        # gateway, so the standard websocket bridge is all we need.
         working-directory: ros
-        run: make docker-deb-bridge-kilted
+        run: make FOXGLOVE_BRIDGE_REMOTE_ACCESS=OFF docker-deb-bridge-kilted
 
       - name: Verify deb architecture
         run: |
