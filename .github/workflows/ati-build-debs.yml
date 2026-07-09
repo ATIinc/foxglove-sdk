@@ -37,7 +37,10 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Build deb in ROS kilted container
-        run: make -C ros docker-deb-bridge-kilted
+        # The Makefile mounts $(PWD)/.. into the container, and $(PWD) comes from
+        # the shell environment (make -C would not update it), so run from ros/.
+        working-directory: ros
+        run: make docker-deb-bridge-kilted
 
       - name: Verify deb architecture
         run: |
